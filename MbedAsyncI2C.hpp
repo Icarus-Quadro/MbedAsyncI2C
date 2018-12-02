@@ -57,15 +57,30 @@ public:
     }
 
     template<typename Register, typename Callback>
-    void schedule(I2CTransferType type, uint8_t hostAddress, Callback const& callback)
+    void scheduleRead(uint8_t hostAddress, Callback const& callback)
     {
         using Task = I2CRegisterTask<Register>;
         auto task = mAllocator.template allocate<Task>();
         task->hostAddress = hostAddress;
-        task->type = type;
+        task->type = I2CTransferType::read;
         task->callback = [callback](I2CTask* data) {
             auto const task = static_cast<Task*>(data);
             callback(task->data);
+        };
+
+        mQueue.put(task);
+    }
+
+    template<typename Register, typename Callback>
+    void scheduleWrite(uint8_t hostAddress, Register const& data, Callback const& callback)
+    {
+        using Task = I2CRegisterTask<Register>;
+        auto task = mAllocator.template allocate<Task>();
+        task->hostAddress = hostAddress;
+        task->type = I2CTransferType::write;
+        task->data = data;
+        task->callback = [callback](I2CTask* data) {
+            callback();
         };
 
         mQueue.put(task);
@@ -89,7 +104,8 @@ private:
             mDriver.transfer(task->hostAddress << 1,
                 writeAddress, writeSize,
                 readAddress, readSize,
-                event_callback_t(this, &MbedAsyncI2C::transferComplete));
+                event_callback_t(this, &MbedAsyncI2C::transferComplete),
+                I2C_EVENT_ALL);
             mTransferSemaphore.wait();
 
             task->callback(task);
